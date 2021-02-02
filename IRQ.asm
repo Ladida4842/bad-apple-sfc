@@ -1,41 +1,36 @@
-macro IRQ_end()
-	JSR HDMA_Update
-	LDA #$0F : STA $2100
-	LDA #$06 : STA $420C
-	INC.b RAM_frame
-	%pullall(0)
-	RTI
-endmacro
-
 IRQ:
-	%pushall(0)
-	LDA $4211
-	LDA #$80 : STA $2100
-	STZ $420C
+	REP #$39
+	PHA : PHY : PHX : PHB : PHK : PLB
+	SEP #$30
 
-	LDA.b RAM_frame
-	BIT #$02 : BEQ .null
-	LSR : BCS .odd
+	LDA CPU.irqflag
+	LDX #$80
+	LDA #$06 : STA CPU.hdma
 
-.even
+	LDA DP.audiosync
+	BIT #$02 : BNE .null
+	EOR #$01
+	LSR
 	REP #$20
-	LDA.b RAM_vram_addr : STA $2116
-	LDA #$1800 : STA $4305
-	LDA #$2000 : STA $4302
+	LDA #$1800 : STA DMA[0].size
+	LDA DP.vramaddr
+	STX PPU.display
+	BCS .odd
+.even
+	STA PPU.vramaddr
+	LDA #$0000 : STA DMA[0].src
 	SEP #$21
-	ROL : STA $420B
+	ROL : STA CPU.dma
 .null
-	%IRQ_end()
+	JMP HDMA_Update
 
 .odd
-	REP #$21
-	LDA.b RAM_vram_addr : ADC #$0C00 : STA $2116
-	LDA #$1800 : STA $4305
-	LDA #$3800 : STA $4302
+	ADC #$0BFF : STA PPU.vramaddr
+	LDA #$1800 : STA DMA[0].src
 	SEP #$21
-	ROL : STA $420B
-	LDA.b RAM_vram_addr+1
-	STA $210B
+	ROL : STA CPU.dma
+	LDA DP.vramaddr+1
+	STA PPU.bg12gfx
 	EOR #$20
-	STA.b RAM_vram_addr+1
-	%IRQ_end()
+	STA DP.vramaddr+1
+	JMP HDMA_Update

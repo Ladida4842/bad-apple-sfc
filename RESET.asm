@@ -1,76 +1,118 @@
 RESET:
 	incsrc _init.asm
 
-	PEA $2100 : PLD
+	PEA PPU : PLD
+	dpbase PPU
+	optimize dp always
 
 ;create tilemap
-	LDA #$80 : STA $15
+;	LDA #$80 : STA PPU.vramctrl
 	REP #$30
-	LDA #$4000 : STA $16
-	LDA #$0000 : PHA
-	LDX #$03FF
-	-
-	STA $18
-	INC
+	LDA #$4000 : STA PPU.vramaddr
+	LDY #$0000
+	LDX #$0017 : STX $0000
+--	TYA
+	LDX #$001F
+	CLC
+-	STA PPU.vramdata
+	ADC #$0018
 	DEX : BPL -
+	INY
+	DEC $0000 : BPL --
+	LDX #$00FF
+	LDA #$03FF
+-	STA PPU.vramdata
+	DEX : BPL -
+	INX
+	TXA
+-	STA $7F0000,x
+	DEX #2 : BNE -
 	SEP #$30
 
 ;create palette
-	STZ $21
-	STZ $22 : STZ $22
-	LDA #$20 : STA $21 : STA.w RAM_vram_addr+1
-	STZ $22 : STZ $22
-	LDA #$4A : STA $22
-	LDA #$29 : STA $22
-	LDA #$B5 : STA $22
-	LDA #$56 : STA $22
-	LDA #$FF : STA $22 : STA $22
+	STZ PPU.cgramaddr
+	STZ PPU.cgramdata
+	STZ PPU.cgramdata
+	LDX #$05
+	LDA #$21
+	STA PPU.cgramaddr
+-	LDA .palette,x
+	STA PPU.cgramdata
+	DEX : BPL -
 
 ;initialize regs
-	STZ $05
-	LDA #$EF : STA $10
-	LDA #$01 : STA $10
-	LDA #$40 : STA $08
-	LDA #$02 : STA $2C
-	STZ $0B
+	STZ PPU.bgmode
+	LDA #$40 : STA PPU.bg2map
+	LDA #$EF : STA PPU.bg2y
+	LDA #$01 : STA PPU.bg2y
+	INC : STA PPU.mainscr
+	STZ PPU.bg12gfx
 
-	PLD
+	PEA DMA : PLD
+	dpbase DMA
+
+	REP #$20
+	STZ DP.videoframe
+	LDA #$2000 : STA DP.vramaddr
+	STZ DP.audiostream
+	LDA #$0200 : STA DP.audiostream+2
+;	STZ DP.decomp.src
+;	STZ DP.decomp.src+2
+;	STZ DP.decomp.dest+1
+;	STZ DP.decomp.misc
+;	STZ DP.decomp.backup
+;	STZ DP.decomp.backup+2
 
 ;audio HDMA setup
 	JSR UploadSPCEngine
 	JSR TableMaker
-	STZ.b RAM_audiostream+2
-	LDA #$02 : STA.b RAM_audiostream_sync
-	LDA #$7F : STA $4314
-	LDA #$41 : STA $4317
-	STZ $4324
+	SEP #$30
+;	STZ DP.audiostream+2
+;	LDA #$02 : STA DP.audiosync
+	LDA #$80 : STA DMA[1].srcBk
+	LDA #$40 : STA DMA[1].indBk
+	LDA #$80
+	STA DMA[2].srcBk
 	REP #$20
-	STZ.b RAM_audiostream
-	LDA #$4041 : STA $4310
-	LDA #$4300 : STA $4320
-	SEP #$20
+;	STZ DP.audiostream
+	LDA #$4041 : STA DMA[1].ctrl
+	LDA #$4300 : STA DMA[2].ctrl
 
 ;graphics DMA setup
-	REP #$10
-	LDA #$80 : STA $2115
-	LDX #$1801 : STX $4300
-	LDA #$7E : STA $4304
-	SEP #$10
+	LDX #$80 : STX PPU.vramctrl
+	LDA #$1801 : STA DMA[0].ctrl
+	LDX #$7F : STX DMA[0].srcBk
+
+;decompressor setup
+	JSR DecompLC_LZ2_init
 
 ;IRQ setup and initial null frame
+	LDA #$00D8 : STA CPU.vtime
+	LDA #$0088 : STA CPU.htime
+	SEP #$20
+	LDA #$30 : STA CPU.interrupt
 	CLI
-	STZ $420A
-	LDA #$D1 : STA $4209
-	LDA #$20 : STA $4200
-	WAI
-	LDA #$80 : STA $2100
-	LDA #$06 : STA $420C
-	DEC.b RAM_frame
-	BRA +
+;	LDA #$0C
+;-	WAI
+;	DEC : BPL -
+;	LDA #$80 : STA PPU.display
+;	LDA #$06 : STA CPU.hdma
+;	DEC DP.frame
+	STZ DP.frame
+	BRA decompressor
 
-;game loop
-	-
+.palette
+	db $FF,$FF,$56,$B5,$29,$4A
+
+;video loops here when it ends
+.end
+	SEI
+	STZ CPU.interrupt
+	STZ CPU.hdma
+	STZ PPU.mainscr
+	BRA $FE
+
+;video loop
+.loop
 	WAI
-	+
-	JSR decompressor
-	BRA -
+	incsrc video/videostream.asm

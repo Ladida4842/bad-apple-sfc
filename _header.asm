@@ -1,43 +1,34 @@
-;ROM HEADER
-;starts at $00FFC0 (no extended header)
-cleartable
-%org($00FFC0)
-fillbyte $20 : fill 21
-%org($00FFC0)
+;== Cartridge Header ===========================================| 
+org $00FFC0 : fillbyte $20 : fill 21 : skip -21
+	db "Bad Apple!!"
+warnpc $00FFD5
 
-;ROM title, 21 bytes, JIS X 201
-db "[TOUHOU] BAD APPLE"
-;ショウジョ メーカー プラス	SHI yo U SHI " yo _ ME - KA - _ FU * RA SU
+org $00FFD5
+	db $35		;ROM layout (Fast ExHiROM)
+	db $00		;Cartridge type (ROM only)
+	db $0D		;ROM size (64MBit, or 8MB)
+	db $00		;SRAM size (0)
+	db $00		;Country code (Japan NTSC)
+	db $00		;Developer code (Null)
+	db $00		;Version number (v1.00)
+	dw ~$0000 	;Checksum complement
+	dw $0000 	;Checksum
+warnpc $00FFE0
 
-%warnpc($00FFD5)
-%org($00FFD5)
-
-db $25		;ROM layout (ExHiROM)
-db $00		;Cartridge type (ROM, no external RAM)
-db $0D		;ROM size (64MBit, or 8MB)
-db $00		;SRAM size (0KB)
-db $00		;Country code (Japan NTSC)
-db $00		;Developer code (Null)
-db $01		;Version number (v1.1)
-dw ~$8339 	;Checksum complement
-dw $8339 	;Checksum
-
-
-;ROM VECTORS
-
-dd $FFFFFFFF	;[n/a]
-dw $FFFF 	;	COP	(native)
-dw BRK		;	BRK	(native)
-dw $FFFF 	;[???]	ABORT	(native)
-dw $FFFF	;	NMI	(native)
-dw $FFFF	;[n/a]	RESET	(native)
-dw IRQ		;	IRQ	(native)
-dd $FFFFFFFF	;[n/a]
-dw $FFFF	;	COP	(emulation)
-dw $FFFF	;[n/a]		(emulation)
-dw $FFFF	;[???]	ABORT	(emulation)
-dw $FFFF	;	NMI	(emulation)
-dw RESET	;	RESET	(emulation)
-dw $FFFF	;	IRQ/BRK	(emulation)
-
-%warnpc($018000)
+;== CPU Exception Vectors ======================================|
+org $00FFE0
+-	JML IRQ
+	dw NULL		;(Native) COP
+	dw NULL		;(Native) BRK
+	dw NULL		;(Native) ABORT
+	dw NULL		;(Native) NMI
+NULL:	RTI : NOP
+	dw -		;(Native) IRQ
+-	JML RESET
+	dw NULL		;(Emulation) COP
+	dw NULL		;[null]
+	dw NULL		;(Emulation) ABORT
+	dw NULL		;(Emulation) NMI
+	dw -		;(Emulation) RESET
+	dw NULL		;(Emulation) IRQ/BRK
+warnpc $010000
