@@ -10,6 +10,9 @@ requires asar 1.80 or higher to assemble. put asar in the same directory as the 
 https://github.com/RPGHacker/asar
 
 
+more info here https://smwc.me/1561279
+
+
 TODO:
 
 30fps
