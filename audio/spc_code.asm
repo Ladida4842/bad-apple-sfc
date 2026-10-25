@@ -1,4 +1,5 @@
 arch spc700-inline
+!lagtarget = 4	;target frame counter for the control loop
 org $0200
 startpos spc_engine
 
@@ -51,10 +52,22 @@ spc_engine:
 	BCC -
 
 	;MOV $00, #$00			;low byte of upload destination is 00 (handled above)
-	MOV $02, #$04			;$02 = bank to upload sound to. switches between $0400 and $8400
+
+;null end+loop block right after the $8400 buffer, so if the voice somehow still runs
+;off the end then it loops back instead of decoding uninitialized ARAM and potentially crash
+;the control loop prevents this from happening, this is a safeguard that the engine does not rely on
+	MOV A, #$00
+	MOV Y, #$08
+-	MOV $9210+y, A
+	DBNZ Y, -
+	MOV A, #$03
+	MOV $9210, A
+
+	MOV $02, #$04				;$02 = bank to upload sound to. switches between $0400 and $8400
 	%wdsp(#DSP[0].srcn, #$04)	;change instrument
 	%wdsp(#DSP.REG.keyOn, #$01)	;start sound
-	MOV $05, #$0C			;upload timer
+	MOV $05, #$0C				;upload timer
+	MOV $07, #!lagtarget		;$07 = buffer frame counter for control loop (FF = not seen yet)
 	;MOV $F0, #$4A
 	JMP .init			;begin wait
 
@@ -91,6 +104,16 @@ spc_engine:
 	JMP .loop		;check for next hdma transfer
 
 .endupl
+	INC $06			;$06 = frames since the loop pointer was last changed
+	MOV A, $07
+	INC A
+	BNE .counted		;pickup already seen for this buffer
+	MOV SPC.dspaddr, #DSP.REG.endx
+	MOV A, SPC.dspdata
+	LSR A			;voice 0 ENDX is set when it jumps to the loop pointer
+	BCC .counted
+	MOV $07, $06		;so the frame count is how far playback lags the upload
+.counted
 	DEC $05
 	BPL .skip
 
@@ -105,6 +128,33 @@ spc_engine:
 	MOV A, #$03
 	OR A, ($00)+y
 	MOV ($00)+y, A
+
+;control loop
+;count the number of frames it takes for the audio buffer to switch over by reading ENDX
+;calculate pitch to speed up/slow down the dsp to actively control the counter towards !lagtarget
+;pitch = $1000 + 4*(lag - !lagtarget), lag clamped to 1-11
+	MOV A, $07
+	CMP A, #12		;FF (pickup not seen) counts as max lag too
+	BCC +
+	MOV A, #11
++
+	ASL A
+	ASL A
+	CLRC
+	ADC A, #$00-(4*!lagtarget)
+	MOV Y, A
+	MOV A, #DSP[0].pitchLo
+	MOVW SPC.dspaddr, YA
+	MOV A, #$10-1
+	ADC A, #$00		;carry from the low byte (MOV/MOVW leave it alone)
+	MOV Y, A
+	MOV A, #DSP[0].pitchHi
+	MOVW SPC.dspaddr, YA
+	MOV SPC.dspaddr, #DSP.REG.endx
+	MOV SPC.dspdata, #$00	;clear ENDX before the loop pointer changes
+	MOV $06, #$00
+	MOV $07, #$FF
+
 	MOV $13, $02		;this is the moment the loop pointer is changed
 	EOR $02, #$80		;bank to upload. 04 becomes 84 and vice versa
 	MOV $05, #$0B		;upload timer
